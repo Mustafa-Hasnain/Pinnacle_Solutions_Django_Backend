@@ -7,6 +7,11 @@ from django.utils.text import slugify
 from .models import DocumentUpload, DocumentLabel
 from decimal import Decimal
 
+class CommissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Commission
+        fields = ['application', 'commission_percentage', 'commission_amount']
+
 
 class UserSerializer(serializers.ModelSerializer):
     referral_code = serializers.SerializerMethodField()
@@ -21,30 +26,32 @@ class UserSerializer(serializers.ModelSerializer):
         user.set_password(validated_data['password'])
         user.save()
 
-        # Generate and assign referral code
+        # Generate and assign referral code for this user (referrer)
         referral_code = get_random_string(10).upper()
         Referral.objects.create(referrer=user, referral_code=referral_code)
 
+        # Create a new application
         application = Application.objects.create(user=user)
 
-         # Create an application status with the default status and review percentage
+        # Create an application status with default values
         ApplicationStatus.objects.create(
             application=application,
-            status='in_progress',  # Set default status
-            review_percentage=Decimal('0.00')  # Default review percentage
+            status='in_progress',  
+            review_percentage=Decimal('0.00')
         )
+
         # Log user creation activity
         ApplicationActivityLog.objects.create(
             application=application,
             user=user,
             activity=f"User created with referral code {referral_code}"
         )
+        
         return user
 
     def get_referral_code(self, obj):
         referral = Referral.objects.filter(referrer=obj).first()
         return referral.referral_code if referral else None
-
 
 
 class DocumentUploadSerializer(serializers.ModelSerializer):
@@ -254,6 +261,8 @@ class AdminMessageSerializer(serializers.ModelSerializer):
 
     
 class ApplicationSerializer(serializers.ModelSerializer):
+    commission = CommissionSerializer()
+
     class Meta:
         model = Application
         fields = '__all__'
@@ -282,6 +291,20 @@ class ApplicationSerializer(serializers.ModelSerializer):
         return instance
 
     def update(self, instance, validated_data):
+        funding_amount = validated_data.get('funding_amount', instance.funding_amount)
+        instance.funding_amount = funding_amount
+        instance.save()
+
+        # Calculate commission for the application
+        if instance.commission:
+            instance.commission.calculate_commission(funding_amount)
+
+        # Update referral wallet if there's a referral
+        referral = Referral.objects.filter(referee=instance.user).first()
+        if referral:
+            referral.update_wallet_balance(funding_amount)
+
+
         instance = super().update(instance, validated_data)
 
         # Log application updates

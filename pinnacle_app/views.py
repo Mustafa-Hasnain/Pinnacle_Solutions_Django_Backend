@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, InvitationStatus
+from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, InvitationStatus, Commission
 from .serializers import (BasicContactInformationSerializer,
                             BusinessDetailsSerializer,
                             FundingRequirementsSerializer,
@@ -33,6 +33,9 @@ from django.db.models import Prefetch
 from django.utils.timezone import localtime
 from django.db.models import Q
 from django.utils.timezone import now
+from decimal import Decimal
+from django.db.models import Sum  # Add this import
+
 
 
 
@@ -85,26 +88,29 @@ from django.utils.timezone import now
 class SignUpView(APIView):
     def post(self, request):
         referral_code = request.data.get('referral_code', None)
-        referral = None  # Initialize referral to avoid unbound errors
+        referrer = None  # Initialize to avoid unbound error
 
-        # If referral code is provided, validate it
+        # If referral code is provided, validate it and get the referrer
         if referral_code:
             try:
-                # Find the referral object by referral_code
-                referral = Referral.objects.get(referral_code=referral_code)
+                referrer_referral = Referral.objects.get(referral_code=referral_code)
+                referrer = referrer_referral.referrer  # Get the referrer user
             except Referral.DoesNotExist:
                 return Response({"error": "Invalid referral code."}, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            user.is_active = False  # Set user as inactive initially
+            user.is_active = False  # Set user as inactive until verification
             user.save()
 
-            # If referral is valid, associate referee with the referrer
-            if referral:
-                referral.referee = user
-                referral.save()
+            # Create a new referral record for the referee with the referrer info
+            if referrer:
+                Referral.objects.create(
+                    referrer=referrer,
+                    referee=user,  # Set the current user as the referee
+                    referral_code=referral_code  # Save referral code for tracking
+                )
 
             # Handle referral invitation
             referee_email = user.email
@@ -112,10 +118,9 @@ class SignUpView(APIView):
                 invitation = ReferralInvitation.objects.get(referee_email=referee_email)
                 invitation.update_status(InvitationStatus.INVITATION_ACCEPTED)
             except ReferralInvitation.DoesNotExist:
-                # Create a new invitation if it doesn't exist, but only if referral is valid
-                if referral:
+                if referrer:
                     ReferralInvitation.objects.create(
-                        referrer=referral.referrer,  # Associate with the referrer
+                        referrer=referrer,
                         referee_email=referee_email,
                         status=InvitationStatus.INVITATION_ACCEPTED
                     )
@@ -133,19 +138,18 @@ class SignUpView(APIView):
                 verification_link = f"http://localhost:3000/verify-email/{token}/"
                 body = f"Click the link to verify your email: {verification_link}"
 
-                # Create the email
+                # Send the email
                 msg = MIMEMultipart()
                 msg['From'] = sender_email
                 msg['To'] = recipient_email
                 msg['Subject'] = subject
                 msg.attach(MIMEText(body, 'plain'))
 
-                # Set up the SMTP server
-                server = smtplib.SMTP('smtp.gmail.com', 587)  # SMTP server for Gmail
-                server.starttls()  # Start TLS encryption
-                server.login(sender_email, sender_password)  # Login to the email account
-                server.send_message(msg)  # Send the email
-                server.quit()  # Terminate the SMTP session
+                server = smtplib.SMTP('smtp.gmail.com', 587)
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                server.quit()
 
                 return Response({"message": "Verification email sent."}, status=status.HTTP_201_CREATED)
 
@@ -153,7 +157,7 @@ class SignUpView(APIView):
                 return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        
 class VerifyEmailView(APIView):
     def get(self, request, token):
         verification_token = get_object_or_404(VerificationToken, token=token)
@@ -1139,6 +1143,42 @@ def get_clients(request):
         'clients': user_data
     }, status=200)
 
+# @api_view(['GET'])
+# def get_all_applications(request):
+#     # Get all applications with prefetched related models
+#     applications = Application.objects.prefetch_related('basiccontactinformation', 'applicationstatus')
+
+#     user_data = []
+
+#     for application in applications:
+#         # Attempt to access BasicContactInformation
+#         try:
+#             business_info = application.basiccontactinformation
+#         except BasicContactInformation.DoesNotExist:
+#             continue  # Skip this application if there's no BasicContactInformation
+
+#         # Fetch the last status info
+#         status_info = ApplicationStatus.objects.filter(application=application).last()
+
+#         # Attempt to extract required information, skip if any field is missing
+#         try:
+#             user_data.append({
+#                 'full_name': business_info.full_name,
+#                 'email': application.user.email,  # Fetch user's email directly from the application
+#                 'business_name': business_info.business_name,
+#                 'phone_no': business_info.phone_number,
+#                 'application_status': status_info.status if status_info else 'N/A',  # Use the latest status
+#                 'lastActivity': status_info.last_updated if status_info else 'N/A',  # Use last updated timestamp from ApplicationStatus
+#                 'application_id': application.id
+#             })
+#         except AttributeError:
+#             continue  # Skip this application if any field is missing
+
+#     return JsonResponse({
+#         'applications': user_data
+#     }, status=200)
+
+
 @api_view(['GET'])
 def get_all_applications(request):
     # Get all applications with prefetched related models
@@ -1156,6 +1196,27 @@ def get_all_applications(request):
         # Fetch the last status info
         status_info = ApplicationStatus.objects.filter(application=application).last()
 
+        # Attempt to fetch commission information
+        try:
+            commission = Commission.objects.get(application=application)
+            commission_data = {
+                'commission_percentage': commission.commission_percentage,
+                'commission_amount': commission.commission_amount,
+                'commission_paid': commission.comission_paid
+            }
+        except Commission.DoesNotExist:
+            commission_data = {
+                'commission_percentage': None,
+                'commission_amount': None,
+                'commission_paid': False
+            }
+
+        # Check if the user has a referral
+        try:
+            has_referral = Referral.objects.filter(referee=application.user).exists()
+        except Referral.DoesNotExist:
+            has_referral = False
+
         # Attempt to extract required information, skip if any field is missing
         try:
             user_data.append({
@@ -1165,7 +1226,9 @@ def get_all_applications(request):
                 'phone_no': business_info.phone_number,
                 'application_status': status_info.status if status_info else 'N/A',  # Use the latest status
                 'lastActivity': status_info.last_updated if status_info else 'N/A',  # Use last updated timestamp from ApplicationStatus
-                'application_id': application.id
+                'application_id': application.id,
+                'commission': commission_data,  # Add commission data
+                'has_referral': has_referral  # Add referral status flag
             })
         except AttributeError:
             continue  # Skip this application if any field is missing
@@ -1349,14 +1412,81 @@ def admin_application_view(request, application_id):
 
 
 
+# @api_view(['GET'])
+# def get_user_application_details(request, user_id):
+#     try:
+#         first_application = Application.objects.prefetch_related('basiccontactinformation').first()
+#         user_data = first_application.basiccontactinformation
+#         # Fetch the user and their latest application
+#         user = User.objects.get(id=user_id)
+#         latest_application = Application.objects.filter(user=user).latest('date_created')
+
+#         # Fetch application status and review percentage
+#         application_status = ApplicationStatus.objects.get(application=latest_application)
+#         status_data = {
+#             'status': application_status.status,
+#             'review_percentage': application_status.review_percentage,
+#         }
+
+#         # Fetch total number of referrals
+#         referral_count = Referral.objects.filter(referrer=user).count()
+
+#         # Fetch the latest 2 activity logs
+#         activity_logs = ApplicationActivityLog.objects.filter(Q(application=latest_application) | Q(user=user_id)).order_by('-timestamp')[:2]
+#         activities = [
+#             {
+#                 'activity': log.activity,
+#                 'date': localtime(log.timestamp).date(),
+#                 'time': localtime(log.timestamp).time(),
+#                 'status': application_status.status,
+#             }
+#             for log in activity_logs
+#         ]
+
+#         # Fetch all documents with status "rejected" or "reminder_pending"
+#         rejected_or_pending_docs = DocumentUpload.objects.filter(
+#             application=latest_application, 
+#             status__in=['rejected', 'reminder_pending']
+#         )
+#         documents = [
+#             {
+#                 'label': doc.label.label,
+#                 'document_id': doc.id,
+#                 'application_id': doc.application.id,
+#                 'status': doc.status
+#             }
+#             for doc in rejected_or_pending_docs
+#         ]
+
+#         # Prepare the response
+#         data = {
+#             'full_name': user_data.full_name,  # Or 'user.full_name' if name is stored
+#             'application_status': status_data,
+#             'total_referrals': referral_count,
+#             'recent_activities': activities,
+#             'rejected_or_pending_documents': documents,
+#         }
+
+#         return Response(data, status=status.HTTP_200_OK)
+
+#     except User.DoesNotExist:
+#         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+#     except Application.DoesNotExist:
+#         return Response({'error': 'No application found for this user'}, status=status.HTTP_404_NOT_FOUND)
+#     except Exception as e:
+#         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['GET'])
 def get_user_application_details(request, user_id):
     try:
-        first_application = Application.objects.prefetch_related('basiccontactinformation').first()
-        user_data = first_application.basiccontactinformation
-        # Fetch the user and their latest application
-        user = User.objects.get(id=user_id)
+        # Fetch the user
+        user = get_object_or_404(User, id=user_id)
+        
+        # Fetch the latest application for the user
         latest_application = Application.objects.filter(user=user).latest('date_created')
+
+        # Fetch the BasicContactInformation associated with the latest application
+        user_data = get_object_or_404(BasicContactInformation, application=latest_application)
 
         # Fetch application status and review percentage
         application_status = ApplicationStatus.objects.get(application=latest_application)
@@ -1368,8 +1498,11 @@ def get_user_application_details(request, user_id):
         # Fetch total number of referrals
         referral_count = Referral.objects.filter(referrer=user).count()
 
-        # Fetch the latest 2 activity logs
-        activity_logs = ApplicationActivityLog.objects.filter(Q(application=latest_application) | Q(user=user_id)).order_by('-timestamp')[:2]
+        # Fetch the latest 2 activity logs for the application or user
+        activity_logs = ApplicationActivityLog.objects.filter(
+            Q(application=latest_application) | Q(user=user)
+        ).order_by('-timestamp')[:2]
+        
         activities = [
             {
                 'activity': log.activity,
@@ -1385,6 +1518,7 @@ def get_user_application_details(request, user_id):
             application=latest_application, 
             status__in=['rejected', 'reminder_pending']
         )
+        
         documents = [
             {
                 'label': doc.label.label,
@@ -1397,7 +1531,7 @@ def get_user_application_details(request, user_id):
 
         # Prepare the response
         data = {
-            'full_name': user_data.full_name,  # Or 'user.full_name' if name is stored
+            'full_name': user_data.full_name,
             'application_status': status_data,
             'total_referrals': referral_count,
             'recent_activities': activities,
@@ -1410,6 +1544,8 @@ def get_user_application_details(request, user_id):
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
     except Application.DoesNotExist:
         return Response({'error': 'No application found for this user'}, status=status.HTTP_404_NOT_FOUND)
+    except BasicContactInformation.DoesNotExist:
+        return Response({'error': 'No contact information found for this user\'s application'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
@@ -1488,7 +1624,10 @@ def get_referral_summary(request, user_id):
 
     # Get the referrer's current wallet balance
     referral_obj = Referral.objects.filter(referrer=user).first()
-    wallet_balance = referral_obj.wallet_balance if referral_obj else 0
+    wallet_balance = Referral.objects.filter(referrer=user).aggregate(
+        total_balance=Sum('wallet_balance')
+    )['total_balance'] or 0
+
 
     # Get all the invitations details (email, status, earnings)
     invitations = ReferralInvitation.objects.filter(referrer=user).values(
@@ -1726,6 +1865,67 @@ def application_statistics(request):
     return Response(data)
 
 
+@api_view(['POST'])
+def set_funding_and_pay_commission(request, application_id):
+    # Step 1: Extract data from request
+    commission_percentage = request.data.get('commission_percentage')
+    commission_amount = request.data.get('commission_amount')
+
+    if not commission_percentage or not commission_amount:
+        return Response({"error": "Both commission_percentage and commission_amount are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Convert to Decimal
+        commission_percentage = Decimal(commission_percentage)
+        commission_amount = Decimal(commission_amount)
+
+        # Step 2: Use atomic transaction to ensure rollback in case of error
+        with transaction.atomic():
+            # Step 3: Get the Application and update the funding amount
+            application = get_object_or_404(Application, id=application_id)
+            application.funding_amount = commission_amount
+            application.save()
+
+            # Step 4: Handle the commission for the application
+            commission, created = Commission.objects.get_or_create(application=application)
+            commission.commission_percentage = commission_percentage
+            commission.calculate_commission(funding_amount=commission_amount)
+
+            # Step 5: Check if the user has a referral
+            try:
+                referral = Referral.objects.get(referee=application.user)
+            except Referral.DoesNotExist:
+                return Response({"error": "No referral found for this user."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # # Step 6: Update referral wallet balance
+            # referral.update_wallet_balance(funding_amount=commission_amount)
+
+            # # Step 7: Handle referral invitations
+            # referral_invitation = ReferralInvitation.objects.filter(referee_email=application.user.email).first()
+            # if referral_invitation:
+            #     referral_invitation.update_earnings(funding_amount=commission_amount)
+            #     referral_invitation.update_status('Application_Completed')
+
+            # Step 6: Directly update referral wallet balance by adding the commission_amount
+            referral.wallet_balance += commission_amount
+            referral.save()
+
+            # Step 7: Handle referral invitations
+            referral_invitation = ReferralInvitation.objects.filter(referee_email=application.user.email).first()
+            if referral_invitation:
+                # Directly add the commission_amount to earned_from_referral
+                referral_invitation.earned_from_referral += commission_amount
+                referral_invitation.status = 'Application_Completed'
+                referral_invitation.save()
+
+
+            # Step 8: Return a success response
+            return Response({"success": "Funding, commission, and referral updates completed successfully."}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        # Step 9: Rollback transaction if an error occurs
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 # # class DocumentUploadView(viewsets.ModelViewSet):
 # #     queryset = DocumentUpload.objects.all()
 # #     serializer_class = DocumentUploadSerializer

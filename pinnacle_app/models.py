@@ -43,6 +43,8 @@ class Application(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     last_updated = models.DateTimeField(auto_now=True)
     steps_completed = models.BooleanField(default=False)
+    funding_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))  # Added funding amount for commission calculation
+
 
 
 class BasicContactInformation(models.Model):
@@ -190,6 +192,7 @@ class Commission(models.Model):
     application = models.OneToOneField(Application, on_delete=models.CASCADE)
     commission_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
     commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    comission_paid = models.BooleanField(default=False)
     
     def calculate_commission(self, funding_amount):
         """

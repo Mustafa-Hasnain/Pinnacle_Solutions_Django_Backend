@@ -15,6 +15,7 @@ urlpatterns = [
     path('applications/<int:application_id>/documents/', views.document_upload_view),
     path('applications/<int:application_id>/additional-documents/', views.additional_document_upload_view),
     path('application/<int:application_id>/status/', views.update_application_status, name='update_application_status'),
+    path('applications/<int:application_id>/set-funding-and-pay-commission/', views.set_funding_and_pay_commission, name='set-funding-and-pay-commission'),
     path('document/<int:document_id>/update/', views.update_document_upload, name='update_document_upload'),
     path('create_application/', views.create_application, name='create_application'),
     path('delete_application/<int:application_id>/', views.delete_application, name='delete_application'),
