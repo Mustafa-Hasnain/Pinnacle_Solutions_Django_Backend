@@ -44,13 +44,10 @@ urlpatterns = [
     path('notifications/<int:user_id>/', views.get_notifications, name='get_notifications'),
     path('notifications/mark_seen/', views.mark_notification_seen, name='mark_notification_seen'),
     path('application-statistics/', views.application_statistics, name='application_statistics'),
-
-
-
-
-
-
-
+    path('search_applications/<int:user_id>/', views.search_user_applications, name='search_user_applications'),
+    path('notifications/unseen/', views.get_unseen_notifications, name='get_unseen_notifications'),
+    path('notifications/update/', views.update_notification_seen, name='update_notification_seen'),
+    path('activity_logs/<int:user_id>/', views.get_activity_logs, name='get_activity_logs'),
 
 
 

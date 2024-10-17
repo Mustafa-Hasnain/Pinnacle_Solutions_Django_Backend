@@ -28,8 +28,8 @@ SECRET_KEY = 'django-insecure-dasm!q6u-08-8&qzk_sy%5$anma(xyfec1&f$u-v317_5w8)7$
 DEBUG = True
 # DEBUG = False
 
-# ALLOWED_HOSTS = []
-ALLOWED_HOSTS = ["mustafahasnain19.pythonanywhere.com"]
+ALLOWED_HOSTS = []
+# ALLOWED_HOSTS = ["mustafahasnain19.pythonanywhere.com"]
 
 
 # Application definition
@@ -91,27 +91,27 @@ WSGI_APPLICATION = 'pinnacle_project.wsgi.application'
 #     }
 # }
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'pinnacle_db',
-#         'USER': 'root',
-#         'PASSWORD': '12345',
-#         'HOST': 'localhost',
-#         'PORT': '3306',
-#     }
-# }
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'mustafahasnain19$pinnacle_db',
-        'USER': 'mustafahasnain19',
-        'PASSWORD': 'bigybags123',
-        'HOST': 'mustafahasnain19.mysql.pythonanywhere-services.com',
+        'NAME': 'pinnacle_db',
+        'USER': 'root',
+        'PASSWORD': '12345',
+        'HOST': 'localhost',
         'PORT': '3306',
     }
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'mustafahasnain19$pinnacle_db',
+#         'USER': 'mustafahasnain19',
+#         'PASSWORD': 'bigybags123',
+#         'HOST': 'mustafahasnain19.mysql.pythonanywhere-services.com',
+#         'PORT': '3306',
+#     }
+# }
 
 AUTHENTICATION_BACKENDS = [
     'pinnacle_app.backends.EmailBackend',  # Replace 'yourapp' with the actual app name

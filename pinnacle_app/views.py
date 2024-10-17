@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, InvitationStatus, Commission
+from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, InvitationStatus, Commission, AdminNotification
 from .serializers import (BasicContactInformationSerializer,
                             BusinessDetailsSerializer,
                             FundingRequirementsSerializer,
@@ -43,6 +43,7 @@ from django.db.models import Sum  # Add this import
 
 
 
+
 # class SignUpView(APIView):
 #     def post(self, request):
 #         serializer = UserSerializer(data=request.data)
@@ -57,8 +58,8 @@ from django.db.models import Sum  # Add this import
 
 #             # Send verification email manually via SMTP
 #             try:
-#                 sender_email = "bigybags@gmail.com"
-#                 sender_password = "ewpfolvcpyuddgwn"
+#                 sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+#                 sender_password = "yhqtnudtpbwuwurj"
 #                 recipient_email = user.email
 #                 subject = "Verify your email"
 #                 verification_link = f"http://localhost:3000/verify-email/{token}/"
@@ -131,8 +132,8 @@ class SignUpView(APIView):
 
             # Send verification email manually via SMTP
             try:
-                sender_email = "bigybags@gmail.com"
-                sender_password = "ewpfolvcpyuddgwn"
+                sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+                sender_password = "yhqtnudtpbwuwurj"
                 recipient_email = user.email
                 subject = "Verify your email"
                 verification_link = f"http://localhost:3000/verify-email/{token}/"
@@ -169,7 +170,6 @@ class VerifyEmailView(APIView):
 
         # Delete the token after verification
         verification_token.delete()
-
         return Response({"message": "Email successfully verified."}, status=status.HTTP_200_OK)
     
 
@@ -195,8 +195,8 @@ def resend_verification_email(request):
         VerificationToken.objects.create(user=user, token=token)
 
         # Send verification email manually via SMTP
-        sender_email = "bigybags@gmail.com"
-        sender_password = "ewpfolvcpyuddgwn"
+        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+        sender_password = "yhqtnudtpbwuwurj"
         recipient_email = user.email
         subject = "Resend: Verify your email"
         verification_link = f"http://localhost:3000/verify-email/{token}/"
@@ -235,6 +235,30 @@ def login_user(request):
 
     # Check if the user is active (i.e., email verified)
     if not user.is_active:
+         # Retrieve the existing verification token for the user
+        token = VerificationToken.objects.get(user=user).token
+        
+        # Send verification email manually via SMTP
+        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+        sender_password = "yhqtnudtpbwuwurj"
+        recipient_email = user.email
+        subject = "Verify your email"
+        verification_link = f"http://localhost:3000/verify-email/{token}/"
+        body = f"Click the link to verify your email: {verification_link}"
+
+        # Send the email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+
         return Response({"message": "Email not verified. Please verify your email first."}, status=status.HTTP_403_FORBIDDEN)
 
     # Check if steps_completed is False and return the application_id
@@ -621,8 +645,8 @@ def send_admin_message(request):
     subject = "Important Message from Admin"
 
     # Send verification email via SMTP
-    sender_email = "bigybags@gmail.com"
-    sender_password = "ewpfolvcpyuddgwn"  # Ensure to keep this secure; consider using environment variables
+    sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+    sender_password = "yhqtnudtpbwuwurj"
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
@@ -861,11 +885,43 @@ def upload_files(request, application_id):
         # Create the document upload
         DocumentUpload.objects.create(application=application, label=document_label, file=file)
 
+    application.steps_completed = True  # Set the attribute on the instance
+    application.save()  # Save the instance
+
     ApplicationStatus.objects.create(application=application, status='submitted')
-    Application.steps_completed = True
-    Application.save()
+
+    AdminNotification.objects.create(
+                application=application,
+                message="New application received",
+                seen=False
+            )
 
     return Response({'message': 'Documents uploaded successfully.'}, status=status.HTTP_201_CREATED)
+
+@api_view(['GET'])
+def get_activity_logs(request, user_id):
+    # Get user
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Get the last 20 activity logs for the user
+    activity_logs = ApplicationActivityLog.objects.filter(user=user).order_by('-timestamp')[:20]
+
+    # Serialize the data
+    data = [
+        {
+            'id': log.id,
+            'application_id': log.application.id,
+            'user_id': log.user.id,
+            'activity': log.activity,
+            'timestamp': log.timestamp.isoformat()  # Convert to ISO format
+        }
+        for log in activity_logs
+    ]
+
+    return Response(data, status=status.HTTP_200_OK)
             
 # class DocumentUploadView(generics.GenericAPIView):
 #     serializer_class = DocumentUploadSerializer
@@ -998,8 +1054,61 @@ def update_steps_completed(request):
 
                 except User.DoesNotExist:
                     return JsonResponse({'error': 'User not found.'}, status=404)
+                
+                AdminNotification.objects.create(
+                application=application,
+                message="New application received",
+                seen=False
+            )
+
 
             return JsonResponse({'message': 'Steps completed status updated successfully.'}, status=200)
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
+
+    return JsonResponse({'error': 'Invalid HTTP method.'}, status=405)
+
+
+@csrf_exempt
+def get_unseen_notifications(request):
+    if request.method == 'GET':
+        unseen_notifications = AdminNotification.objects.filter(seen=False)
+
+        notifications_list = [
+            {
+                "id": notification.id,
+                "application_id": notification.application.id,
+                "message": notification.message,
+                "seen": notification.seen,
+                "created_at": notification.created_at.isoformat()
+            }
+            for notification in unseen_notifications
+        ]
+
+        return JsonResponse(notifications_list, safe=False, status=200)
+
+    return JsonResponse({'error': 'Invalid HTTP method.'}, status=405)
+
+@csrf_exempt
+def update_notification_seen(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            notification_id = data.get('notification_id')
+
+            if notification_id is None:
+                return JsonResponse({'error': 'notification_id is required.'}, status=400)
+
+            try:
+                notification = AdminNotification.objects.get(id=notification_id)
+                notification.seen = True
+                notification.save()
+
+                return JsonResponse({'message': 'Notification marked as seen successfully.'}, status=200)
+
+            except AdminNotification.DoesNotExist:
+                return JsonResponse({'error': 'Notification not found.'}, status=404)
 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
@@ -1048,7 +1157,7 @@ def get_latest_5_users(request):
     latest_users = User.objects.order_by('-date_joined').prefetch_related(
         Prefetch('application_set', queryset=Application.objects.select_related('basiccontactinformation')),
         Prefetch('referee', queryset=Referral.objects.select_related('referee'))  # Corrected related_name here
-    )[:5]
+    )[:10]
 
     user_data = []
 
@@ -1068,6 +1177,9 @@ def get_latest_5_users(request):
         else:
             full_name = 'N/A'
             business_name = 'N/A'
+
+        if full_name == 'N/A' or business_name == 'N/A':
+            continue
 
         # Fetching the referrer if available (using the related name 'referral')
         referrer_info = user.referral.first()  # Get the first referral for the user
@@ -1481,6 +1593,8 @@ def get_user_application_details(request, user_id):
     try:
         # Fetch the user
         user = get_object_or_404(User, id=user_id)
+        applications = Application.objects.filter(user=user)
+
         
         # Fetch the latest application for the user
         latest_application = Application.objects.filter(user=user).latest('date_created')
@@ -1515,7 +1629,7 @@ def get_user_application_details(request, user_id):
 
         # Fetch all documents with status "rejected" or "reminder_pending"
         rejected_or_pending_docs = DocumentUpload.objects.filter(
-            application=latest_application, 
+            application__in=applications,  # Filter documents for all applications of the user
             status__in=['rejected', 'reminder_pending']
         )
         
@@ -1605,6 +1719,45 @@ def get_user_dashboard_data(request, user_id):
 
     return JsonResponse(response_data)
 
+
+@api_view(['GET'])
+def search_user_applications(request, user_id):
+    query = request.GET.get('q', '').strip()  # Get search query from request parameters
+
+    # Build the base queryset for the user
+    user_applications = Application.objects.filter(user_id=user_id).select_related(
+        'applicationstatus', 'fundingrequirements'
+    )
+
+    # Apply filters based on the search query if it exists
+    if query:
+        user_applications = user_applications.filter(
+            Q(id__icontains=query) |  # Search by application ID
+            Q(fundingrequirements__finance_type__icontains=query) |  # Search by finance type
+            Q(fundingrequirements__amount_required__icontains=query) |  # Search by amount required
+            Q(date_created__icontains=query) |  # Search by date submitted
+            Q(applicationstatus__status__icontains=query) |  # Search by application status
+            Q(applicationstatus__review_percentage__icontains=query)  # Search by review percentage
+        )
+
+    applications_data = []
+    for app in user_applications:
+        try:
+            applications_data.append({
+                'application_id': app.id,
+                'finance_type': app.fundingrequirements.finance_type,
+                'amount_required': str(app.fundingrequirements.amount_required),
+                'date_submitted': app.date_created,
+                'application_status': app.applicationstatus.status,
+                'review_percentage': str(app.applicationstatus.review_percentage),
+            })
+        except Exception as e:
+            # Skip this application if FundingRequirements or ApplicationStatus does not exist
+            continue
+
+    return JsonResponse({'applications': applications_data}, status=200)
+
+
 @api_view(['GET'])
 def get_referral_summary(request, user_id):
     """
@@ -1617,10 +1770,7 @@ def get_referral_summary(request, user_id):
     user = get_object_or_404(User, id=user_id)
 
     # Query total accepted invitations
-    total_accepted_invitations = ReferralInvitation.objects.filter(
-        referrer=user, 
-        status='Invitation_Accepted'
-    ).count()
+    total_accepted_invitations = Referral.objects.filter(referrer=user).count()
 
     # Get the referrer's current wallet balance
     referral_obj = Referral.objects.filter(referrer=user).first()
@@ -1669,8 +1819,8 @@ def send_referral_invites(request, user_id):
         # Generate the referral URL with the referral code
         referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
 
-        sender_email = "bigybags@gmail.com"
-        sender_password = "ewpfolvcpyuddgwn"
+        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+        sender_password = "yhqtnudtpbwuwurj"
         subject = "You're invited! Join our platform"
         body = f"Hi, \n\n{referrer.email} has invited you to join our platform. Click the link to sign up: {referral_url}"
 
@@ -1718,8 +1868,8 @@ def send_invitation(request):
     body = f"Hi {client_name},\n\n{message}\n\nClick the link to sign up: {referral_url}\n\nBest regards,\nPinnacle Solutions"
 
     # Prepare email
-    sender_email = "bigybags@gmail.com"
-    sender_password = "ewpfolvcpyuddgwn"  # Consider using environment variables for sensitive info
+    sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+    sender_password = "yhqtnudtpbwuwurj"  # Consider using environment variables for sensitive info
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = email

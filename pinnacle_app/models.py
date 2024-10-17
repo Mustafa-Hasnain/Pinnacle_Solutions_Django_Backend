@@ -186,6 +186,15 @@ class AdminMessage(models.Model):
         self.additional_document_label = document_name
         self.message = f"Please provide additional document: {document_name}"
         self.save()
+    
+class AdminNotification(models.Model):
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='admin_notifications')
+    message = models.TextField()  
+    seen = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True) 
+
+    def __str__(self):
+        return f"Notification for Application ID {self.application.id} - Seen: {self.seen}"
 
 
 class Commission(models.Model):
