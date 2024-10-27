@@ -80,7 +80,7 @@ class FundingRequirements(models.Model):
             ('other', 'Other')
         ]
     )
-    amount_required = models.DecimalField(max_digits=10, decimal_places=2)
+    amount_required = models.DecimalField(max_digits=20, decimal_places=2)
     purpose = models.CharField(max_length=255)
     repayment_period = models.CharField(max_length=255)
     preferred_funding_timeline = models.CharField(max_length=255)
@@ -89,9 +89,9 @@ class FundingRequirements(models.Model):
 
 class FinancialInformation(models.Model):
     application = models.OneToOneField(Application, on_delete=models.CASCADE)
-    annual_revenue = models.DecimalField(max_digits=10, decimal_places=2)
-    net_profit = models.DecimalField(max_digits=10, decimal_places=2)
-    outstanding_debt = models.DecimalField(max_digits=10, decimal_places=2)
+    annual_revenue = models.DecimalField(max_digits=20, decimal_places=2)
+    net_profit = models.DecimalField(max_digits=20, decimal_places=2)
+    outstanding_debt = models.DecimalField(max_digits=20, decimal_places=2)
     date_created = models.DateTimeField(auto_now_add=True)
     last_updated = models.DateTimeField(auto_now=True)
 

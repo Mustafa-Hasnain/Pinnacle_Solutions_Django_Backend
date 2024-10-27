@@ -89,6 +89,7 @@ from django.db.models import Sum  # Add this import
 class SignUpView(APIView):
     def post(self, request):
         referral_code = request.data.get('referral_code', None)
+        print("Referral Code: ",referral_code)
         referrer = None  # Initialize to avoid unbound error
 
         # If referral code is provided, validate it and get the referrer
@@ -135,16 +136,69 @@ class SignUpView(APIView):
                 sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
                 sender_password = "yhqtnudtpbwuwurj"
                 recipient_email = user.email
-                subject = "Verify your email"
-                verification_link = f"http://localhost:3000/verify-email/{token}/"
-                body = f"Click the link to verify your email: {verification_link}"
+                subject = "Verify Your Email - Pinnacle Solutions"
+
+                verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+                # verification_link = f"http://localhost:3000/verify-email/{token}/"
+                
+                # Creating the HTML body with a heading, welcome message, and verification link
+                body = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{
+                            font-family: Arial, sans-serif;
+                            background-color: #f4f4f4;
+                            color: #333;
+                            padding: 20px;
+                        }}
+                        .container {{
+                            background-color: #fff;
+                            padding: 20px;
+                            border-radius: 10px;
+                            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                            max-width: 600px;
+                            margin: 0 auto;
+                        }}
+                        h1 {{
+                            color: #2e6fba;
+                            text-align: center;
+                        }}
+                        p {{
+                            font-size: 16px;
+                            line-height: 1.6;
+                        }}
+                        a {{
+                            color: #1a73e8;
+                            text-decoration: none;
+                            font-weight: bold;
+                        }}
+                        a:hover {{
+                            text-decoration: underline;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Pinnacle Solutions</h1>
+                        <p>Welcome to Pinnacle Solutions! We're excited to have you on board. To complete your registration, we need to verify your email address.</p>
+                        <p>Please click the link below to verify your email:</p>
+                        <p>
+                            <a href="{verification_link}" target="_blank">Verify your email</a>
+                        </p>
+                        <p>If you did not create this account, please ignore this email.</p>
+                        <p>Thank you for choosing Pinnacle Solutions!</p>
+                    </div>
+                </body>
+                </html>
+                """
 
                 # Send the email
                 msg = MIMEMultipart()
                 msg['From'] = sender_email
                 msg['To'] = recipient_email
                 msg['Subject'] = subject
-                msg.attach(MIMEText(body, 'plain'))
+                msg.attach(MIMEText(body, 'html'))
 
                 server = smtplib.SMTP('smtp.gmail.com', 587)
                 server.starttls()
@@ -161,7 +215,8 @@ class SignUpView(APIView):
         
 class VerifyEmailView(APIView):
     def get(self, request, token):
-        verification_token = get_object_or_404(VerificationToken, token=token)
+        # verification_token = get_object_or_404(VerificationToken, token=token)
+        verification_token = VerificationToken.objects.filter(token=token).last()
 
         # Activate the user
         user = verification_token.user
@@ -169,7 +224,7 @@ class VerifyEmailView(APIView):
         user.save()
 
         # Delete the token after verification
-        verification_token.delete()
+        # verification_token.delete()
         return Response({"message": "Email successfully verified."}, status=status.HTTP_200_OK)
     
 
@@ -198,15 +253,68 @@ def resend_verification_email(request):
         sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
         sender_password = "yhqtnudtpbwuwurj"
         recipient_email = user.email
-        subject = "Resend: Verify your email"
-        verification_link = f"http://localhost:3000/verify-email/{token}/"
-        body = f"Click the link to verify your email: {verification_link}"
+        subject = "Resend: Verify Your Email - Pinnacle Solutions"
+
+        # verification_link = f"http://localhost:3000/verify-email/{token}/"
+        verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+        
+        # Creating the HTML body with a heading, resend message, and verification link
+        body = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #f4f4f4;
+                    color: #333;
+                    padding: 20px;
+                }}
+                .container {{
+                    background-color: #fff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #2e6fba;
+                    text-align: center;
+                }}
+                p {{
+                    font-size: 16px;
+                    line-height: 1.6;
+                }}
+                a {{
+                    color: #1a73e8;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+                a:hover {{
+                    text-decoration: underline;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Pinnacle Solutions</h1>
+                <p>We noticed you haven't verified your email yet. No worries! We're resending the verification link below.</p>
+                <p>Please click the link below to verify your email:</p>
+                <p>
+                    <a href="{verification_link}" target="_blank">Verify your email</a>
+                </p>
+                <p>If you did not request this, you can safely ignore this email.</p>
+                <p>Thank you for choosing Pinnacle Solutions! We're looking forward to having you onboard.</p>
+            </div>
+        </body>
+        </html>
+        """
 
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body, 'html'))
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -242,16 +350,69 @@ def login_user(request):
         sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
         sender_password = "yhqtnudtpbwuwurj"
         recipient_email = user.email
-        subject = "Verify your email"
-        verification_link = f"http://localhost:3000/verify-email/{token}/"
-        body = f"Click the link to verify your email: {verification_link}"
+        subject = "Verify Your Email - Pinnacle Solutions"
+
+        # verification_link = f"http://localhost:3000/verify-email/{token}/"
+        verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+        
+        # Creating the HTML body with a heading, welcome message, and verification link
+        body = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #f4f4f4;
+                    color: #333;
+                    padding: 20px;
+                }}
+                .container {{
+                    background-color: #fff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #2e6fba;
+                    text-align: center;
+                }}
+                p {{
+                    font-size: 16px;
+                    line-height: 1.6;
+                }}
+                a {{
+                    color: #1a73e8;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+                a:hover {{
+                    text-decoration: underline;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Pinnacle Solutions</h1>
+                <p>Welcome to Pinnacle Solutions! We're excited to have you on board. To complete your registration, we need to verify your email address.</p>
+                <p>Please click the link below to verify your email:</p>
+                <p>
+                    <a href="{verification_link}" target="_blank">Verify your email</a>
+                </p>
+                <p>If you did not create this account, please ignore this email.</p>
+                <p>Thank you for choosing Pinnacle Solutions!</p>
+            </div>
+        </body>
+        </html>
+        """
 
         # Send the email
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body, 'html'))
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -644,15 +805,64 @@ def send_admin_message(request):
     # Prepare email content
     subject = "Important Message from Admin"
 
-    # Send verification email via SMTP
+    # Sender and recipient email information
     sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
     sender_password = "yhqtnudtpbwuwurj"
+    recipient_email = user.email
 
+    # Message from Admin
+    admin_message = """
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                color: #333;
+                padding: 20px;
+            }}
+            .container {{
+                background-color: #fff;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                max-width: 600px;
+                margin: 0 auto;
+            }}
+            h1 {{
+                color: #2e6fba;
+                text-align: center;
+            }}
+            p {{
+                font-size: 16px;
+                line-height: 1.6;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Important Message from Pinnacle Solutions Admin</h1>
+            <p>Dear User,</p>
+            <p>We hope you're doing well! This is an important message from the Pinnacle Solutions admin. Please read the following information carefully:</p>
+            <p>{message_content}</p>
+            <br><br>
+            <p>Thank you for being a valued member of Pinnacle Solutions.</p>
+            <p>Best regards,</p>
+            <p>Pinnacle Solutions Admin Team</p>
+        </div>
+    </body>
+    </html>
+    """.format(message_content=message)  # Insert the message content here
+
+    # Create the email message
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = recipient_email
     msg['Subject'] = subject
-    msg.attach(MIMEText(message, 'plain'))
+
+    # Attach the HTML body to the email
+    msg.attach(MIMEText(admin_message, 'html'))
+
 
     try:
         with smtplib.SMTP('smtp.gmail.com', 587) as server:
@@ -1294,7 +1504,7 @@ def get_clients(request):
 @api_view(['GET'])
 def get_all_applications(request):
     # Get all applications with prefetched related models
-    applications = Application.objects.prefetch_related('basiccontactinformation', 'applicationstatus')
+    applications = Application.objects.prefetch_related('basiccontactinformation', 'applicationstatus').order_by('id')
 
     user_data = []
 
@@ -1345,6 +1555,7 @@ def get_all_applications(request):
         except AttributeError:
             continue  # Skip this application if any field is missing
 
+    user_data = sorted(user_data, key=lambda x: x['application_id'])
     return JsonResponse({
         'applications': user_data
     }, status=200)
@@ -1616,7 +1827,7 @@ def get_user_application_details(request, user_id):
         activity_logs = ApplicationActivityLog.objects.filter(
             Q(application=latest_application) | Q(user=user)
         ).order_by('-timestamp')[:2]
-        
+
         activities = [
             {
                 'activity': log.activity,
@@ -1647,7 +1858,7 @@ def get_user_application_details(request, user_id):
         data = {
             'full_name': user_data.full_name,
             'application_status': status_data,
-            'total_referrals': referral_count,
+            'total_referrals': referral_count-1,
             'recent_activities': activities,
             'rejected_or_pending_documents': documents,
         }
@@ -1786,7 +1997,7 @@ def get_referral_summary(request, user_id):
 
     # Prepare the response data
     response_data = {
-        "total_accepted_invitations": total_accepted_invitations,
+        "total_accepted_invitations": total_accepted_invitations-1,
         "wallet_balance": wallet_balance,
         "referral_code": referral_obj.referral_code,
         "invitations": list(invitations)
@@ -1816,19 +2027,92 @@ def send_referral_invites(request, user_id):
 
     # Loop through the email list to send invitations
     for recipient_email in email_list:
+        # # Generate the referral URL with the referral code
+        # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
+
+        # sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
+        # sender_password = "yhqtnudtpbwuwurj"
+        # subject = "You're invited! Join our platform"
+        # body = f"Hi, \n\n{referrer.email} has invited you to join our platform. Click the link to sign up: {referral_url}"
+
+        # msg = MIMEMultipart()
+        # msg['From'] = sender_email
+        # msg['To'] = recipient_email
+        # msg['Subject'] = subject
+        # msg.attach(MIMEText(body, 'plain'))
+
         # Generate the referral URL with the referral code
-        referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
+        # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
+        referral_url = f"https://pinnacle-solution.vercel.app/?ref={referral.referral_code}/"
 
+        # Email subject
+        subject = "You're invited! Join Pinnacle Solutions"
+
+        # Sender and recipient email information
         sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-        sender_password = "yhqtnudtpbwuwurj"
-        subject = "You're invited! Join our platform"
-        body = f"Hi, \n\n{referrer.email} has invited you to join our platform. Click the link to sign up: {referral_url}"
+        sender_password = "yhqtnudtpbwuwurj"  # Consider using environment variables for better security
 
+        # Referral invitation email content
+        referral_message = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #f4f4f4;
+                    color: #333;
+                    padding: 20px;
+                }}
+                .container {{
+                    background-color: #fff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #2e6fba;
+                    text-align: center;
+                }}
+                p {{
+                    font-size: 16px;
+                    line-height: 1.6;
+                }}
+                a {{
+                    color: #1a73e8;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+                a:hover {{
+                    text-decoration: underline;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>You're Invited to Join Pinnacle Solutions!</h1>
+                <p>Hi,</p>
+                <p>{referrer.email} has invited you to join our platform. To get started, click the link below:</p>
+                <p>
+                    <a href="{referral_url}" target="_blank">Join Pinnacle Solutions</a>
+                </p>
+                <p>We're excited to have you with us! Click the link to start your journey.</p>
+                <p>Best regards,<br>Pinnacle Solutions Team</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Prepare email message
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach the HTML body to the email
+        msg.attach(MIMEText(referral_message, 'html'))
+
 
         try:
             server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -1856,25 +2140,83 @@ def send_invitation(request):
     client_name = request.data.get('clientName')
     email = request.data.get('email')
     message = request.data.get('message')
-    referral_url = f"http://localhost:3000/"
+    # referral_url = f"http://localhost:3000/"
+    referral_url = f"https://pinnacle-solution.vercel.app/"
 
 
     # Validate the input data
     if not client_name or not email or not message:
         return JsonResponse({'error': 'All fields are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Generate the email body
-    subject = "You're invited! Join our platform"
-    body = f"Hi {client_name},\n\n{message}\n\nClick the link to sign up: {referral_url}\n\nBest regards,\nPinnacle Solutions"
+    # Email subject
+    subject = "You're invited! Join Pinnacle Solutions"
 
-    # Prepare email
+    # Sender and recipient email information
     sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-    sender_password = "yhqtnudtpbwuwurj"  # Consider using environment variables for sensitive info
+    sender_password = "yhqtnudtpbwuwurj"  # Suggestion: Use environment variables for better security
+    recipient_email = email
+
+    # Invitation message details
+    invitation_message = f"""
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                color: #333;
+                padding: 20px;
+            }}
+            .container {{
+                background-color: #fff;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                max-width: 600px;
+                margin: 0 auto;
+            }}
+            h1 {{
+                color: #2e6fba;
+                text-align: center;
+            }}
+            p {{
+                font-size: 16px;
+                line-height: 1.6;
+            }}
+            a {{
+                color: #1a73e8;
+                text-decoration: none;
+                font-weight: bold;
+            }}
+            a:hover {{
+                text-decoration: underline;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>You're Invited to Join Pinnacle Solutions!</h1>
+            <p>Hi {client_name},</p>
+            <p>{message}</p>
+            <p>We would love to have you onboard. To get started, simply click the link below to sign up:</p>
+            <p>
+                <a href="{referral_url}" target="_blank">Join Pinnacle Solutions</a>
+            </p>
+            <p>We're excited to have you with us!</p>
+            <p>Best regards,<br>Pinnacle Solutions Team</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Prepare email message
     msg = MIMEMultipart()
     msg['From'] = sender_email
-    msg['To'] = email
+    msg['To'] = recipient_email
     msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+
+    # Attach the HTML body to the email
+    msg.attach(MIMEText(invitation_message, 'html'))
 
     try:
         # Sending email
@@ -1924,45 +2266,109 @@ def mark_notification_seen(request):
     except AdminMessage.DoesNotExist:
         return Response({'error': 'Notification not found'}, status=404)
 
+# @api_view(['GET'])
+# def application_statistics(request):
+#     today = now().date()
+#     start_of_year = today.replace(month=1, day=1)
+#     start_of_month = today.replace(day=1)
+#     seven_days_ago = today - timedelta(days=7)
+
+#     # Aggregation for months
+#     monthly_data = (
+#         Application.objects
+#         .filter(date_created__gte=start_of_year)
+#         .annotate(month=TruncMonth('date_created'))
+#         .values('month')
+#         .annotate(
+#             total=Count('id'),
+#             success=Count('id', filter=Q(applicationstatus__status__in=['completed', 'approved'])),
+#             rejected=Count('id', filter=Q(applicationstatus__status='rejected'))
+#         )
+#         .order_by('month')
+#     )
+
+#     # Aggregation for years
+#     yearly_data = (
+#         Application.objects
+#         .annotate(year=TruncYear('date_created'))
+#         .values('year')
+#         .annotate(
+#             total=Count('id'),
+#             success=Count('id', filter=Q(applicationstatus__status__in=['completed', 'approved'])),
+#             rejected=Count('id', filter=Q(applicationstatus__status='rejected'))
+#         )
+#         .order_by('year')
+#     )
+
+#     # Aggregation for last 7 days
+#     last_seven_days_data = (
+#         Application.objects
+#         .filter(date_created__gte=seven_days_ago)
+#         .annotate(day=TruncDay('date_created'))
+#         .values('day')
+#         .annotate(
+#             total=Count('id'),
+#             success=Count('id', filter=Q(applicationstatus__status__in=['completed', 'approved'])),
+#             rejected=Count('id', filter=Q(applicationstatus__status='rejected'))
+#         )
+#         .order_by('day')
+#     )
+
+#     # Formatting the response for last 7 days
+#     last_seven_days = [
+#         {
+#             'day': day_data['day'].strftime('%Y-%m-%d'),
+#             'total': day_data['total'],
+#             'success': day_data['success'],
+#             'rejected': day_data['rejected']
+#         }
+#         for day_data in last_seven_days_data
+#     ]
+
+#     # Formatting the response for months
+#     monthly_stats = [
+#         {
+#             'month': month_data['month'].strftime('%b'),  # Short month name
+#             'total': month_data['total'],
+#             'success': month_data['success'],
+#             'rejected': month_data['rejected']
+#         }
+#         for month_data in monthly_data
+#     ]
+
+#     # Formatting the response for years
+#     yearly_stats = [
+#         {
+#             'year': year_data['year'].year,  # Just the year number
+#             'total': year_data['total'],
+#             'success': year_data['success'],
+#             'rejected': year_data['rejected']
+#         }
+#         for year_data in yearly_data
+#     ]
+
+#     # Return data in the required format
+#     data = {
+#         'last_7_days': last_seven_days,
+#         'monthly': monthly_stats,
+#         'yearly': yearly_stats
+#     }
+
+#     return Response(data)
+
 @api_view(['GET'])
 def application_statistics(request):
+    # Get the 'days' parameter from the request query string, default to 7 if not provided
+    days = int(request.query_params.get('days', 7))  # Default to last 7 days
+
     today = now().date()
-    start_of_year = today.replace(month=1, day=1)
-    start_of_month = today.replace(day=1)
-    seven_days_ago = today - timedelta(days=7)
+    start_date = today - timedelta(days=days)  # Calculate the start date based on the 'days' input
 
-    # Aggregation for months
-    monthly_data = (
+    # Aggregation for the specified number of days
+    filtered_data = (
         Application.objects
-        .filter(date_created__gte=start_of_year)
-        .annotate(month=TruncMonth('date_created'))
-        .values('month')
-        .annotate(
-            total=Count('id'),
-            success=Count('id', filter=Q(applicationstatus__status__in=['completed', 'approved'])),
-            rejected=Count('id', filter=Q(applicationstatus__status='rejected'))
-        )
-        .order_by('month')
-    )
-
-    # Aggregation for years
-    yearly_data = (
-        Application.objects
-        .annotate(year=TruncYear('date_created'))
-        .values('year')
-        .annotate(
-            total=Count('id'),
-            success=Count('id', filter=Q(applicationstatus__status__in=['completed', 'approved'])),
-            rejected=Count('id', filter=Q(applicationstatus__status='rejected'))
-        )
-        .order_by('year')
-    )
-
-    # Aggregation for last 7 days
-    last_seven_days_data = (
-        Application.objects
-        .filter(date_created__gte=seven_days_ago)
-        .annotate(day=TruncDay('date_created'))
+        .filter(date_created__gte=start_date)  # Filter applications starting from the calculated start date
+        .annotate(day=TruncDay('date_created'))  # Truncate by day
         .values('day')
         .annotate(
             total=Count('id'),
@@ -1972,48 +2378,47 @@ def application_statistics(request):
         .order_by('day')
     )
 
-    # Formatting the response for last 7 days
-    last_seven_days = [
+    # Formatting the response for React line chart
+    statistics = [
         {
-            'day': day_data['day'].strftime('%Y-%m-%d'),
-            'total': day_data['total'],
-            'success': day_data['success'],
-            'rejected': day_data['rejected']
+            'date': day_data['day'].strftime('%Y-%m-%d'),  # Format the date as 'YYYY-MM-DD'
+            'total': day_data['total'],                   # Total applications
+            'success': day_data['success'],               # Successful applications
+            'rejected': day_data['rejected']              # Rejected applications
         }
-        for day_data in last_seven_days_data
+        for day_data in filtered_data
     ]
 
-    # Formatting the response for months
-    monthly_stats = [
-        {
-            'month': month_data['month'].strftime('%b'),  # Short month name
-            'total': month_data['total'],
-            'success': month_data['success'],
-            'rejected': month_data['rejected']
-        }
-        for month_data in monthly_data
-    ]
+    # Return the data for React chart mapping
+    return Response(statistics)
 
-    # Formatting the response for years
-    yearly_stats = [
-        {
-            'year': year_data['year'].year,  # Just the year number
-            'total': year_data['total'],
-            'success': year_data['success'],
-            'rejected': year_data['rejected']
-        }
-        for year_data in yearly_data
-    ]
+@api_view(['GET'])
+def approved_funding_last_5_months(request):
+    # Get current date
+    today = timezone.now()
 
-    # Return data in the required format
-    data = {
-        'last_7_days': last_seven_days,
-        'monthly': monthly_stats,
-        'yearly': yearly_stats
+    # Calculate the date for 5 months ago
+    five_months_ago = today - timezone.timedelta(days=5*30)  # Approximation of 5 months
+
+    # Filter FundingRequirements based on ApplicationStatus being 'approved' or 'Approved'
+    # Also filter based on applications from the last 5 months
+    data = (
+        FundingRequirements.objects
+        .filter(application__applicationstatus__status__iexact='approved', 
+                application__date_created__gte=five_months_ago)
+        .annotate(month=TruncMonth('application__date_created'))  # Group by month
+        .values('month')
+        .annotate(total_funding=Sum('amount_required'))  # Sum the amount_required
+        .order_by('month')
+    )
+
+    # Prepare the response data
+    response_data = {
+        "months": [entry['month'].strftime("%B %Y") for entry in data],
+        "total_funding": [entry['total_funding'] for entry in data]
     }
 
-    return Response(data)
-
+    return Response(response_data)
 
 @api_view(['POST'])
 def set_funding_and_pay_commission(request, application_id):
