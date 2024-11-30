@@ -2,6 +2,9 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
 from decimal import Decimal
+import os
+
+
 
 # User Management Models
 class UserManager(BaseUserManager):
@@ -18,13 +21,28 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         return self.create_user(email, password, **extra_fields)
 
+def profile_pic_upload_path(instance, filename):
+    """Defines the upload path for profile pictures."""
+    extension = filename.split('.')[-1]  # Get the file extension
+    new_filename = f"{instance.id}_{filename}"  # Format: id_original_filename
+    return os.path.join("profile_pics", new_filename)
+
 class User(AbstractBaseUser):
     email = models.EmailField(unique=True)
     is_active = models.BooleanField(default=False)  # Email verification status
-    is_staff = models.BooleanField(default=False)
+    is_superAdmin = models.BooleanField(default=False)
+    is_admin = models.BooleanField(default=False)
+    admin_name = models.CharField(max_length=255, default="Admin")
     date_joined = models.DateTimeField(default=timezone.now)
-    steps_completed = models.BooleanField(default=False)  # Track application steps completion
-
+    steps_completed = models.BooleanField(default=False)
+    last_login = models.DateTimeField(null=True)
+    last_location = models.CharField(max_length=255, default="N/A", null=True)
+    last_location_ip = models.CharField(max_length=255, default="N/A", null=True)
+    profile_picture = models.ImageField(
+        upload_to=profile_pic_upload_path,  # Custom path defined above
+        null=True,  # Allows null values
+        blank=True  # Allows blank values in forms
+    )
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
@@ -213,11 +231,18 @@ class Commission(models.Model):
 
 
 # Status Choices for Referral Invitations
-class InvitationStatus(models.TextChoices):
-    INVITATION_SENT = 'Invitation_Sent', 'Invitation Sent'
-    INVITATION_ACCEPTED = 'Invitation_Accepted', 'Invitation Accepted'
-    APPLICATION_COMPLETED = 'Application_Completed', 'Application Completed'
-    APPLICATION_REJECTED = 'Application_Rejected', 'Application Rejected'
+# class InvitationStatus(models.TextChoices):
+#     INVITATION_SENT = 'Invitation_Sent', 'Invitation Sent'
+#     INVITATION_ACCEPTED = 'Invitation_Accepted', 'Invitation Accepted'
+#     APPLICATION_COMPLETED = 'Application_Completed', 'Application Completed'
+#     APPLICATION_REJECTED = 'Application_Rejected', 'Application Rejected'
+
+STATUS_CHOICES = [
+    ('Invitation_Sent', 'Invitation Sent'),
+    ('Invitation_Accepted', 'Invitation Accepted'),
+    ('Application_Completed', 'Application Completed'),
+    ('Application_Rejected', 'Application Rejected'),
+]
 
 
 # Referral Invitation Model
@@ -230,8 +255,8 @@ class ReferralInvitation(models.Model):
     # Invitation status and timestamp
     status = models.CharField(
         max_length=30,
-        choices=InvitationStatus.choices,
-        default=InvitationStatus.INVITATION_SENT
+        choices=STATUS_CHOICES,
+        default='Invitation_Sent'
     )
     date_sent = models.DateTimeField(auto_now_add=True)
     date_accepted = models.DateTimeField(null=True, blank=True)
@@ -244,11 +269,11 @@ class ReferralInvitation(models.Model):
 
     def update_status(self, new_status):
         self.status = new_status
-        if new_status == InvitationStatus.INVITATION_ACCEPTED:
+        if new_status == 'Invitation_Accepted':
             self.date_accepted = timezone.now()  # Set to current time
-        elif new_status == InvitationStatus.APPLICATION_COMPLETED:
+        elif new_status == 'Application_Completed':
             self.date_completed = timezone.now()  # Set to current time
-        elif new_status == InvitationStatus.APPLICATION_REJECTED:
+        elif new_status == 'Application_Rejected':
             self.date_rejected = timezone.now()  # Set to current time
         self.save()
 

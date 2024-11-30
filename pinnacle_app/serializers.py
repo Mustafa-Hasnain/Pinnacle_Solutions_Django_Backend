@@ -7,6 +7,7 @@ from django.utils.text import slugify
 from .models import DocumentUpload, DocumentLabel
 from decimal import Decimal
 
+
 class CommissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Commission
@@ -18,7 +19,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'password', 'referral_code']
+        fields = ['id', 'email', 'password', 'referral_code', 'is_active','is_superAdmin','is_admin','steps_completed','profile_picture','admin_name','last_login','last_location', 'last_location_ip']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -52,6 +53,13 @@ class UserSerializer(serializers.ModelSerializer):
     def get_referral_code(self, obj):
         referral = Referral.objects.filter(referrer=obj).first()
         return referral.referral_code if referral else None
+    
+    # def to_representation(self, instance):
+    #     # Override to_representation to include password (decrypted format)
+    #     data = super().to_representation(instance)
+    #     # Get password from instance
+    #     data['password'] = instance.password  # You can directly access the password if required
+    #     return data
 
 
 class DocumentUploadSerializer(serializers.ModelSerializer):
@@ -81,6 +89,7 @@ class DocumentUploadSerializer(serializers.ModelSerializer):
             activity=f"Document uploaded: {instance.label.label} with name {instance.file.name}"
         )
         return instance
+
     
     def update(self, instance, validated_data):
         old_status = instance.status

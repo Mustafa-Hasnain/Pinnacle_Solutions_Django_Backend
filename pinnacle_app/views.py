@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, InvitationStatus, Commission, AdminNotification
+from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, Commission, AdminNotification
 from .serializers import (BasicContactInformationSerializer,
                             BusinessDetailsSerializer,
                             FundingRequirementsSerializer,
@@ -35,6 +35,11 @@ from django.db.models import Q
 from django.utils.timezone import now
 from decimal import Decimal
 from django.db.models import Sum  # Add this import
+from django.contrib.auth.hashers import check_password
+from datetime import datetime
+
+
+
 
 
 
@@ -58,8 +63,8 @@ from django.db.models import Sum  # Add this import
 
 #             # Send verification email manually via SMTP
 #             try:
-#                 sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-#                 sender_password = "yhqtnudtpbwuwurj"
+#                 sender_email = settings.EMAIL_HOST_USER
+#                 sender_password = settings.EMAIL_HOST_PASSWORD
 #                 recipient_email = user.email
 #                 subject = "Verify your email"
 #                 verification_link = f"http://localhost:3000/verify-email/{token}/"
@@ -73,7 +78,7 @@ from django.db.models import Sum  # Add this import
 #                 msg.attach(MIMEText(body, 'plain'))
 
 #                 # Set up the SMTP server
-#                 server = smtplib.SMTP('smtp.gmail.com', 587)  # SMTP server for Gmail
+#                 server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)  # SMTP server for Gmail
 #                 server.starttls()  # Start TLS encryption
 #                 server.login(sender_email, sender_password)  # Login to the email account
 #                 server.send_message(msg)  # Send the email
@@ -85,6 +90,295 @@ from django.db.models import Sum  # Add this import
 #                 return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def admin_login(request):
+    """
+    Authenticate an admin user based on email and password, 
+    update last login timestamp, and optionally update last location.
+    """
+    email = request.data.get('email')
+    password = request.data.get('password')
+    location_ip = request.data.get('location_ip', None)
+    location = request.data.get('location', None)  # Optional location input
+
+    if not email or not password:
+        return Response({"error": "Email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Authenticate the user
+    user = authenticate(email=email, password=password)
+
+    if user is None:
+        return Response({"error": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if not user.is_admin and not user.is_superAdmin:
+        return Response({"error": "You are not authorized to access this resource."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Update last login timestamp
+    user.last_login = datetime.now()
+
+    # Update last location if provided and valid
+    if location and location != "N/A":
+        user.last_location = location
+    
+    if location_ip and location_ip != "N/A":
+        user.last_location_ip = location_ip
+
+    user.save()
+
+    formatted_last_login = user.last_login.strftime("%d/%b/%Y - %I:%M %p")
+
+
+    # Prepare user data response
+    user_data = {
+        "user_id": user.id,
+        "email": user.email,
+        "admin_name": user.admin_name,
+        "is_superAdmin": user.is_superAdmin,
+        "is_admin": user.is_admin,
+        "last_login": formatted_last_login,  # Include updated last login
+        "last_location": user.last_location,  # Include updated last location
+        "last_location_ip": user.last_location_ip,  # Include updated last location
+    }
+
+    return Response(user_data, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def create_admin_user(request):
+    """
+    Create a new admin user with a default password and send email notification.
+    """
+    email = request.data.get('email')
+    admin_name = request.data.get('name')
+
+    if not email or not admin_name:
+        return Response({"error": "Email and name are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if the email already exists
+    if User.objects.filter(email=email).exists():
+        return Response({"error": "A user with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the admin user
+    password = "Abcd@1234"
+    user = User.objects.create_user(
+        email=email,
+        password=password,
+        is_admin=True,
+        admin_name=admin_name
+    )
+
+    # Send email notification
+    try:
+        sender_email = "superadmin@pinnacleportal.co.uk"
+        sender_password = "s6sz7yIL0,t)"  # Email sender's password
+        recipient_email = email
+        subject = "Welcome to Pinnacle Portal - Admin Access"
+        body = f"""
+        <html>
+        <body>
+            <h2>Hello {admin_name}!</h2>
+            <p>You have been registered as an admin on Pinnacle Portal.</p>
+            <p>Please visit the following link to log in:</p>
+            <a href="https://pinnacleportal.co.uk/admin">https://pinnacleportal.co.uk/admin</a>
+            <br><br>
+            <h3>Your Credentials:</h3>
+            <ul>
+                <li><strong>Email:</strong> {email}</li>
+                <li><strong>Temp Password:</strong> {password}</li>
+            </ul>
+            <p>For security purposes, we recommend changing your password after logging in for the first time.</p>
+            <br>
+            <p>Thank you,</p>
+            <p><strong>Pinnacle Portal Team</strong></p>
+        </body>
+        </html>
+        """
+
+        # Compose the email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+
+        # Send the email
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+
+        return Response({"message": "Admin user created successfully and email sent.", "user_id": user.id},
+                        status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        # If email sending fails, return a response
+        return Response({"error": "Admin created, but failed to send email.", "details": str(e)},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['GET'])
+def get_all_admin_users(request):
+    """
+    Get all users where is_admin is True.
+    """
+    admin_users = User.objects.filter(is_admin=True)
+    serializer = UserSerializer(admin_users, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['DELETE'])
+def delete_user(request, user_id):
+    """
+    Delete a user based on user_id.
+    """
+    user = get_object_or_404(User, id=user_id)  # Fetch the user or return 404
+    user.delete()  # Delete the user
+    return Response({"message": f"User with ID {user_id} has been deleted successfully."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def fetch_profile(request, user_id):
+    """
+    Fetch the admin profile data based on user_id.
+    """
+    user = get_object_or_404(User, id=user_id)  # Ensure user is an admin
+    serializer = UserSerializer(user, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+def fetch_admin_profile(request, user_id):
+    """
+    Fetch the admin profile data based on user_id.
+    """
+    user = get_object_or_404(User, id=user_id)  # Ensure user is an admin
+    serializer = UserSerializer(user, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['PUT'])
+def update_admin_profile(request, user_id):
+    """
+    Update the admin name and/or password based on the payload.
+    """
+    user = get_object_or_404(User, id=user_id)  # Ensure user is an admin
+
+    admin_name = request.data.get('admin_name', None)
+    password = request.data.get('password', None)
+    old_password = request.data.get('old_password', None)
+
+    # Update admin_name if provided
+    if admin_name:
+        user.admin_name = admin_name
+
+    # Update password if provided
+    if old_password and password:
+        if not check_password(old_password, user.password):  # Check if old password matches
+            return Response(
+                {"error": "Old password is incorrect."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        user.set_password(password)  # Set new password if old password matches
+
+    user.save()  # Save the changes
+    return Response({"message": "Admin profile updated successfully."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def get_basic_contact_information(request, user_id):
+    """
+    Fetch the first application of a user and return the user, application, and basic contact information.
+    """
+    user = get_object_or_404(User, id=user_id)
+    application = Application.objects.filter(user=user).first()
+    if not application:
+        return Response({"error": "No applications found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+    basic_contact_info = getattr(application, 'basiccontactinformation', None)
+    if not basic_contact_info:
+        return Response({"error": "No basic contact information found for this application."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Serialize user and application data
+    user_serializer = UserSerializer(user, context={'request': request})
+    application_data = {
+        "id": application.id,
+        "date_created": application.date_created,
+        "last_updated": application.last_updated,
+        "steps_completed": application.steps_completed,
+        "funding_amount": str(application.funding_amount),  # Ensure Decimal is serialized to string
+    }
+    basic_contact_info_serializer = BasicContactInformationSerializer(basic_contact_info)
+
+    # Combine data into a single response
+    response_data = {
+        "user": user_serializer.data,
+        "application": application_data,
+        "basic_contact_info": basic_contact_info_serializer.data,
+    }
+
+    return Response(response_data, status=status.HTTP_200_OK)
+
+
+@api_view(['PUT'])
+def update_basic_contact_and_password(request, user_id):
+    """
+    Update the name, phone number, and password of a user and their first application.
+    """
+    user = get_object_or_404(User, id=user_id)
+    application = Application.objects.filter(user=user).first()
+    if not application:
+        return Response({"error": "No applications found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+    basic_contact_info = getattr(application, 'basiccontactinformation', None)
+    if not basic_contact_info:
+        return Response({"error": "No basic contact information found for this application."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Update fields
+    name = request.data.get("name")
+    phone_number = request.data.get("phone_number")
+    password = request.data.get("password")
+    old_password = request.data.get("old_password")
+
+    if name:
+        basic_contact_info.full_name = name
+    if phone_number:
+        basic_contact_info.phone_number = phone_number
+
+    if old_password and password:
+        if not check_password(old_password, user.password):  # Check if old password matches
+            return Response(
+                {"error": "Old password is incorrect."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        user.set_password(password)  # Set new password if old password matches
+
+    # Save updates
+    basic_contact_info.save()
+    user.save()
+
+    return Response({"message": "Information updated successfully."}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def upload_profile_picture(request, user_id):
+    """
+    Upload or update the user's profile picture.
+    """
+    user = get_object_or_404(User, id=user_id)
+    if 'profile_picture' not in request.FILES:
+        return Response({"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+
+    profile_picture = request.FILES['profile_picture']
+
+    # Save the new profile picture
+    user.profile_picture = profile_picture
+    user.save()
+
+    profile_picture_url = request.build_absolute_uri(user.profile_picture.url)
+
+    # Return updated profile picture URL
+    return Response({
+        "message": "Profile picture updated successfully.",
+        "image_url": profile_picture_url
+    }, status=status.HTTP_200_OK)
+
 
 class SignUpView(APIView):
     def post(self, request):
@@ -118,13 +412,13 @@ class SignUpView(APIView):
             referee_email = user.email
             try:
                 invitation = ReferralInvitation.objects.get(referee_email=referee_email)
-                invitation.update_status(InvitationStatus.INVITATION_ACCEPTED)
+                invitation.update_status('Invitation_Accepted')
             except ReferralInvitation.DoesNotExist:
                 if referrer:
                     ReferralInvitation.objects.create(
                         referrer=referrer,
                         referee_email=referee_email,
-                        status=InvitationStatus.INVITATION_ACCEPTED
+                        status='Invitation_Accepted'
                     )
 
             # Generate a verification token
@@ -133,12 +427,12 @@ class SignUpView(APIView):
 
             # Send verification email manually via SMTP
             try:
-                sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-                sender_password = "yhqtnudtpbwuwurj"
+                sender_email = "no-reply@pinnacleportal.co.uk"
+                sender_password = "n-KyF~dNHTf]"
                 recipient_email = user.email
                 subject = "Verify Your Email - Pinnacle Solutions"
 
-                verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+                verification_link = f"https://pinnacleportal.co.uk/verify-email/{token}/"
                 # verification_link = f"http://localhost:3000/verify-email/{token}/"
                 
                 # Creating the HTML body with a heading, welcome message, and verification link
@@ -200,7 +494,7 @@ class SignUpView(APIView):
                 msg['Subject'] = subject
                 msg.attach(MIMEText(body, 'html'))
 
-                server = smtplib.SMTP('smtp.gmail.com', 587)
+                server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
                 server.starttls()
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
@@ -250,13 +544,13 @@ def resend_verification_email(request):
         VerificationToken.objects.create(user=user, token=token)
 
         # Send verification email manually via SMTP
-        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-        sender_password = "yhqtnudtpbwuwurj"
+        sender_email = "no-reply@pinnacleportal.co.uk"
+        sender_password = "n-KyF~dNHTf]"
         recipient_email = user.email
         subject = "Resend: Verify Your Email - Pinnacle Solutions"
 
         # verification_link = f"http://localhost:3000/verify-email/{token}/"
-        verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+        verification_link = f"https://pinnacleportal.co.uk/verify-email/{token}/"
         
         # Creating the HTML body with a heading, resend message, and verification link
         body = f"""
@@ -316,7 +610,7 @@ def resend_verification_email(request):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html'))
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
@@ -347,13 +641,13 @@ def login_user(request):
         token = VerificationToken.objects.get(user=user).token
         
         # Send verification email manually via SMTP
-        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-        sender_password = "yhqtnudtpbwuwurj"
+        sender_email = "no-reply@pinnacleportal.co.uk"
+        sender_password = "n-KyF~dNHTf]"
         recipient_email = user.email
         subject = "Verify Your Email - Pinnacle Solutions"
 
         # verification_link = f"http://localhost:3000/verify-email/{token}/"
-        verification_link = f"https://pinnacle-solution.vercel.app/verify-email/{token}/"
+        verification_link = f"https://pinnacleportal.co.uk/verify-email/{token}/"
         
         # Creating the HTML body with a heading, welcome message, and verification link
         body = f"""
@@ -414,7 +708,7 @@ def login_user(request):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html'))
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
@@ -435,7 +729,9 @@ def login_user(request):
         "user_id": user.id,
         "email": user.email,
         "steps_completed": user.steps_completed,
-        "application_id": application_id  # This will be None if no application is found
+        "application_id": application_id,  # This will be None if no application is found
+        "is_admin": user.is_admin,
+        "is_superAdmin": user.is_superAdmin
     }, status=status.HTTP_200_OK)
 
 
@@ -791,7 +1087,7 @@ def send_admin_message(request):
             recipient_email = user.email
             
             # Create the AdminMessage instance
-            admin_message = AdminMessage(
+            Admin_message = AdminMessage(
                 application=application,
                 user=user,
                 message=message,
@@ -806,8 +1102,8 @@ def send_admin_message(request):
     subject = "Important Message from Admin"
 
     # Sender and recipient email information
-    sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-    sender_password = "yhqtnudtpbwuwurj"
+    sender_email = "admin@pinnacleportal.co.uk"
+    sender_password = "?8Th(3xHJ7#f"
     recipient_email = user.email
 
     # Message from Admin
@@ -865,7 +1161,7 @@ def send_admin_message(request):
 
 
     try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
@@ -873,7 +1169,7 @@ def send_admin_message(request):
         return Response({'error': f'Failed to send email: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     # Save the message data
-    admin_message.save()  # Save the admin message after populating the fields
+    Admin_message.save()  # Save the admin message after populating the fields
 
     # If document_id is provided, update the DocumentUpload model
     if document_id:
@@ -1806,10 +2102,12 @@ def get_user_application_details(request, user_id):
         user = get_object_or_404(User, id=user_id)
         applications = Application.objects.filter(user=user)
 
-        
+        first_application = Application.objects.filter(user=user).first()
+
         # Fetch the latest application for the user
         latest_application = Application.objects.filter(user=user).latest('date_created')
 
+        user_data_1 = get_object_or_404(BasicContactInformation, application=first_application)
         # Fetch the BasicContactInformation associated with the latest application
         user_data = get_object_or_404(BasicContactInformation, application=latest_application)
 
@@ -1856,7 +2154,7 @@ def get_user_application_details(request, user_id):
 
         # Prepare the response
         data = {
-            'full_name': user_data.full_name,
+            'full_name': user_data_1.full_name,
             'application_status': status_data,
             'total_referrals': referral_count-1,
             'recent_activities': activities,
@@ -2030,8 +2328,8 @@ def send_referral_invites(request, user_id):
         # # Generate the referral URL with the referral code
         # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
 
-        # sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-        # sender_password = "yhqtnudtpbwuwurj"
+        # sender_email = settings.EMAIL_HOST_USER
+        # sender_password = settings.EMAIL_HOST_PASSWORD
         # subject = "You're invited! Join our platform"
         # body = f"Hi, \n\n{referrer.email} has invited you to join our platform. Click the link to sign up: {referral_url}"
 
@@ -2043,14 +2341,14 @@ def send_referral_invites(request, user_id):
 
         # Generate the referral URL with the referral code
         # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
-        referral_url = f"https://pinnacle-solution.vercel.app/?ref={referral.referral_code}/"
+        referral_url = f"https://pinnacleportal.co.uk/?ref={referral.referral_code}/"
 
         # Email subject
         subject = "You're invited! Join Pinnacle Solutions"
 
         # Sender and recipient email information
-        sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-        sender_password = "yhqtnudtpbwuwurj"  # Consider using environment variables for better security
+        sender_email = "referral@pinnacleportal.co.uk"
+        sender_password = "=K]wM.8)d[zG"  # Consider using environment variables for better security
 
         # Referral invitation email content
         referral_message = f"""
@@ -2115,7 +2413,7 @@ def send_referral_invites(request, user_id):
 
 
         try:
-            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
@@ -2125,9 +2423,123 @@ def send_referral_invites(request, user_id):
             ReferralInvitation.objects.create(
                 referrer=referrer,
                 referee_email=recipient_email,
-                status=InvitationStatus.INVITATION_SENT,
+                status='Invitation_Sent',
                 referral_reward_percentage=referral.referral_reward_percentage
             )
+        except Exception as e:
+            return Response({'error': f"Failed to send email to {recipient_email}: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({'message': 'Invitations sent successfully!'}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def send_Admin_referral_invites(request):
+    """
+    API to send referral invitations via email and store the status in the database.
+    """
+    # Get the referrer (user sending the invites)
+    # Get the email list from the request
+    email_list = request.data.get('email_list', [])
+    if not email_list:
+        return Response({'error': 'Email list is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check for the referral code    
+
+    # Loop through the email list to send invitations
+    for recipient_email in email_list:
+        # # Generate the referral URL with the referral code
+        # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
+
+        # sender_email = settings.EMAIL_HOST_USER
+        # sender_password = settings.EMAIL_HOST_PASSWORD
+        # subject = "You're invited! Join our platform"
+        # body = f"Hi, \n\n{referrer.email} has invited you to join our platform. Click the link to sign up: {referral_url}"
+
+        # msg = MIMEMultipart()
+        # msg['From'] = sender_email
+        # msg['To'] = recipient_email
+        # msg['Subject'] = subject
+        # msg.attach(MIMEText(body, 'plain'))
+
+        # Generate the referral URL with the referral code
+        # referral_url = f"http://localhost:3000/?ref={referral.referral_code}/"
+        referral_url = f"https://pinnacleportal.co.uk/"
+
+        # Email subject
+        subject = "You're invited! Join Pinnacle Solutions"
+
+        # Sender and recipient email information
+        sender_email = "admin@pinnacleportal.co.uk"
+        sender_password = "?8Th(3xHJ7#f"  # Consider using environment variables for better security
+
+        # Referral invitation email content
+        referral_message = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #f4f4f4;
+                    color: #333;
+                    padding: 20px;
+                }}
+                .container {{
+                    background-color: #fff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #2e6fba;
+                    text-align: center;
+                }}
+                p {{
+                    font-size: 16px;
+                    line-height: 1.6;
+                }}
+                a {{
+                    color: #1a73e8;
+                    text-decoration: none;
+                    font-weight: bold;
+                }}
+                a:hover {{
+                    text-decoration: underline;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>You're Invited to Join Pinnacle Solutions!</h1>
+                <p>Hi,</p>
+                <p> Pinnacle has invited you to join our platform. To get started, click the link below:</p>
+                <p>
+                    <a href="{referral_url}" target="_blank">Join Pinnacle Solutions</a>
+                </p>
+                <p>We're excited to have you with us! Click the link to start your journey.</p>
+                <p>Best regards,<br>Pinnacle Solutions Team</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Prepare email message
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+
+        # Attach the HTML body to the email
+        msg.attach(MIMEText(referral_message, 'html'))
+
+
+        try:
+            server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+            server.quit()
+
         except Exception as e:
             return Response({'error': f"Failed to send email to {recipient_email}: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -2141,7 +2553,7 @@ def send_invitation(request):
     email = request.data.get('email')
     message = request.data.get('message')
     # referral_url = f"http://localhost:3000/"
-    referral_url = f"https://pinnacle-solution.vercel.app/"
+    referral_url = f"https://pinnacleportal.co.uk/"
 
 
     # Validate the input data
@@ -2152,8 +2564,8 @@ def send_invitation(request):
     subject = "You're invited! Join Pinnacle Solutions"
 
     # Sender and recipient email information
-    sender_email = "Pinnaclebusinessfinanceltd@gmail.com"
-    sender_password = "yhqtnudtpbwuwurj"  # Suggestion: Use environment variables for better security
+    sender_email = "admin@pinnacleportal.co.uk"
+    sender_password = "?8Th(3xHJ7#f"  # Suggestion: Use environment variables for better security
     recipient_email = email
 
     # Invitation message details
@@ -2220,7 +2632,7 @@ def send_invitation(request):
 
     try:
         # Sending email
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)

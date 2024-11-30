@@ -7,6 +7,16 @@ from rest_framework.routers import DefaultRouter
 
 
 urlpatterns = [
+    path('admin/login/', views.admin_login, name='admin_login'),
+    path('create-admin/', views.create_admin_user, name='create_admin_user'),
+    path('delete-admin/<int:user_id>/', views.delete_user, name='delete_user'),
+    path('admin-users/', views.get_all_admin_users, name='get_all_admin_users'),
+    path('admin/<int:user_id>/profile/', views.fetch_admin_profile, name='fetch_admin_profile'),
+    path('admin/<int:user_id>/profile/update/', views.update_admin_profile, name='update_admin_profile'),
+    path('user/<int:user_id>/profile/', views.fetch_profile, name='fetch_profile'),
+    path('user/<int:user_id>/basic-info/', views.get_basic_contact_information, name='get_basic_contact_info'),
+    path('user/<int:user_id>/update-info/', views.update_basic_contact_and_password, name='update_basic_info'),
+    path('user/<int:user_id>/upload-image/', views.upload_profile_picture, name='upload_profile_picture'),
     path('applications/<int:application_id>/basic-contact/', views.basic_contact_information_view),
     path('applications/<int:application_id>/business-details/', views.business_details_view),
     path('applications/<int:application_id>/financial-information/', views.financial_information_view),
@@ -40,6 +50,7 @@ urlpatterns = [
     path('new_application/upload_files/<int:application_id>/', views.upload_files, name='new-application_upload_files'),
     path('referral-summary/<int:user_id>/', views.get_referral_summary, name='referral-summary'),
     path('send-referral-invites/<int:user_id>/', views.send_referral_invites, name='send-referral-invites'),
+    path('send-admin-referral-invites/', views.send_Admin_referral_invites, name='send-admin-referral-invites'),
     path('send-invitation/', views.send_invitation, name='send_invitation'),
     path('notifications/<int:user_id>/', views.get_notifications, name='get_notifications'),
     path('notifications/mark_seen/', views.mark_notification_seen, name='mark_notification_seen'),
