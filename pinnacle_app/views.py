@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, Commission, AdminNotification
+from .models import BasicContactInformation, BusinessDetails, FundingRequirements, FinancialInformation,DocumentUpload, ApplicationStatus, ApplicationActivityLog, AdminMessage, Application, DocumentLabel, Referral, ReferralInvitation, Commission, AdminNotification, AdminEmailLog
 from .serializers import (BasicContactInformationSerializer,
                             BusinessDetailsSerializer,
                             FundingRequirementsSerializer,
@@ -35,8 +35,10 @@ from django.db.models import Q
 from django.utils.timezone import now
 from decimal import Decimal
 from django.db.models import Sum  # Add this import
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from datetime import datetime
+import threading
+
 
 
 
@@ -394,6 +396,60 @@ class SignUpView(APIView):
             except Referral.DoesNotExist:
                 return Response({"error": "Invalid referral code."}, status=status.HTTP_400_BAD_REQUEST)
         
+        user_email = request.data.get('email', '').strip()    
+        try:
+            existing_user = User.objects.get(email=user_email)
+            if not existing_user.is_active:
+                # Generate a new verification token
+                token = get_random_string(64)
+                last_verification_token = VerificationToken.objects.filter(user=existing_user).last()
+                if last_verification_token:
+                    last_verification_token.delete()
+
+                VerificationToken.objects.create(user=existing_user, token=token)
+
+                # Send verification email
+                try:
+                    sender_email = "no-reply@pinnacleportal.co.uk"
+                    sender_password = "n-KyF~dNHTf]"
+                    subject = "Verify Your Email - Pinnacle Solutions"
+                    verification_link = f"https://pinnacleportal.co.uk/verify-email/{token}/"
+                    
+                    body = f"""
+                    <html>
+                    <body>
+                        <p>Hello,</p>
+                        <p>It seems you started registering with this email address but did not complete the verification process. Click the link below to verify your email:</p>
+                        <a href="{verification_link}" target="_blank">Verify your email</a>
+                        <p>If you did not attempt to register, please ignore this email.</p>
+                    </body>
+                    </html>
+                    """
+
+                    msg = MIMEMultipart()
+                    msg['From'] = sender_email
+                    msg['To'] = user_email
+                    msg['Subject'] = subject
+                    msg.attach(MIMEText(body, 'html'))
+
+                    server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    server.quit()
+
+                    return Response(
+                        {"message": "Verification email resent. Please check your inbox."},
+                        status=status.HTTP_200_OK
+                    )
+
+                except Exception as e:
+                    return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            return Response({"error": "The email is already registered."}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            pass  # Proceed with regular sign-up if the email is not registered
+        
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -520,8 +576,142 @@ class VerifyEmailView(APIView):
         # Delete the token after verification
         # verification_token.delete()
         return Response({"message": "Email successfully verified."}, status=status.HTTP_200_OK)
-    
 
+# API to request a password reset
+@api_view(['POST'])
+def request_password_reset(request):
+    try:
+        email = request.data.get('email')
+        if not email:
+            return Response({"message": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = User.objects.filter(email=email, is_admin=False).first()
+        if not user:
+            return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Generate a password reset token
+        token = get_random_string(64)
+        VerificationToken.objects.update_or_create(user=user, defaults={"token": token})
+
+        # Send password reset email
+        sender_email = "no-reply@pinnacleportal.co.uk"
+        sender_password = "n-KyF~dNHTf]"
+        recipient_email = user.email
+        subject = "Reset Your Password - Pinnacle Solutions"
+        reset_link = f"https://pinnacleportal.co.uk/reset-password/{token}/"
+
+        body = f"""
+        <html>
+        <body>
+            <h1>Password Reset</h1>
+            <p>Click the link below to reset your password:</p>
+            <a href="{reset_link}">Reset Password</a>
+            <p>If you did not request a password reset, please ignore this email.</p>
+        </body>
+        </html>
+        """
+
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+
+        return Response({"message": "Password reset email sent successfully."}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# API to request a password reset
+@api_view(['POST'])
+def admin_request_password_reset(request):
+    try:
+        email = request.data.get('email')
+        if not email:
+            return Response({"message": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = User.objects.filter(email=email, is_admin=True).first()
+        if not user:
+            return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Generate a password reset token
+        token = get_random_string(64)
+        VerificationToken.objects.update_or_create(user=user, defaults={"token": token})
+
+        # Send password reset email
+        sender_email = "no-reply@pinnacleportal.co.uk"
+        sender_password = "n-KyF~dNHTf]"
+        recipient_email = user.email
+        subject = "Reset Your Password - Pinnacle Solutions"
+        reset_link = f"https://pinnacleportal.co.uk/admin/reset-password/{token}"
+
+        body = f"""
+        <html>
+        <body>
+            <h1>Password Reset</h1>
+            <p>Click the link below to reset your password:</p>
+            <a href="{reset_link}">Reset Password</a>
+            <p>If you did not request a password reset, please ignore this email.</p>
+        </body>
+        </html>
+        """
+
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+
+        server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+
+        return Response({"message": "Password reset email sent successfully."}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@api_view(['POST'])
+def reset_password(request):
+    try:
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+        if not token or not new_password:
+            return Response({"message": "Token and new password are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if the token exists
+        token_entry = VerificationToken.objects.filter(token=token).last()
+        if not token_entry:
+            return Response({"message": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = token_entry.user
+
+        # Check if the user has verified their email
+        # if not user.is_active:
+        #     return Response({"message": "Please verify your email before resetting your password."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update the user's password
+        user.password = make_password(new_password)
+        user.save()
+
+        # Delete the token after successful reset
+        token_entry.delete()
+
+        return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"message": f"Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     
 @api_view(['POST'])
@@ -541,6 +731,11 @@ def resend_verification_email(request):
 
         # Generate a new verification token
         token = get_random_string(64)
+        
+        last_verification_token = VerificationToken.objects.filter(user=user).last()
+        if last_verification_token:
+            last_verification_token.delete()
+
         VerificationToken.objects.create(user=user, token=token)
 
         # Send verification email manually via SMTP
@@ -1372,6 +1567,7 @@ def upload_files(request, application_id):
     # Get the application
     try:
         application = Application.objects.get(id=application_id)
+        user = application.user
     except Application.DoesNotExist:
         return Response({'error': 'Application not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1401,6 +1597,9 @@ def upload_files(request, application_id):
                 message="New application received",
                 seen=False
             )
+    
+    email_thread = threading.Thread(target=send_emails, args=(application, user))
+    email_thread.start()
 
     return Response({'message': 'Documents uploaded successfully.'}, status=status.HTTP_201_CREATED)
 
@@ -1566,7 +1765,9 @@ def update_steps_completed(request):
                 message="New application received",
                 seen=False
             )
-
+            
+            email_thread = threading.Thread(target=send_emails, args=(application, user))
+            email_thread.start()
 
             return JsonResponse({'message': 'Steps completed status updated successfully.'}, status=200)
 
@@ -1575,6 +1776,74 @@ def update_steps_completed(request):
 
     return JsonResponse({'error': 'Invalid HTTP method.'}, status=405)
 
+def send_emails(application, user):
+    subject = "New Application Completion Notification"
+    message = f"The user {user.admin_name} with email {user.email} has completed an application for the business type. Please check the portal for more details."
+
+    # Create the email message
+    admin_message = f"""
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                color: #333;
+                padding: 20px;
+            }}
+            .container {{
+                background-color: #fff;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                max-width: 600px;
+                margin: 0 auto;
+            }}
+            h1 {{
+                color: #2e6fba;
+                text-align: center;
+            }}
+            p {{
+                font-size: 16px;
+                line-height: 1.6;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Application Completion Notification</h1>
+            <p>Dear Admin,</p>
+            <p>The user <strong>{user.admin_name}</strong> with email <strong>{user.email}</strong> has completed an application.</p>
+            <p>Please check the portal for more details.</p>
+            <br><br>
+            <p>Best regards,</p>
+            <p>Pinnacle Solutions Admin Team</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Get all super admins and admins
+    admin_emails = User.objects.filter(is_active=True, is_superAdmin=True).values_list('email', flat=True)
+    admin_emails = list(admin_emails) + list(User.objects.filter(is_admin=True).values_list('email', flat=True))
+
+    # Add the user email to the list
+    recipient_emails = admin_emails + [user.email]
+
+    for recipient_email in recipient_emails:
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = "admin@pinnacleportal.co.uk"
+            msg['To'] = recipient_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(admin_message, 'html'))
+
+            with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
+                server.starttls()
+                server.login("admin@pinnacleportal.co.uk", "?8Th(3xHJ7#f")
+                server.send_message(msg)
+        except Exception as e:
+            print(f"Failed to send email to {recipient_email}: {str(e)}")
 
 @csrf_exempt
 def get_unseen_notifications(request):
@@ -2439,8 +2708,9 @@ def send_Admin_referral_invites(request):
     # Get the referrer (user sending the invites)
     # Get the email list from the request
     email_list = request.data.get('email_list', [])
-    if not email_list:
-        return Response({'error': 'Email list is required'}, status=status.HTTP_400_BAD_REQUEST)
+    admin_name = request.data.get('adminName')
+    if not email_list or not admin_name:
+        return Response({'error': 'Email list and admin name is required'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Check for the referral code    
 
@@ -2523,6 +2793,30 @@ def send_Admin_referral_invites(request):
         </html>
         """
 
+        # Check if the email exists in the User model
+        user_exists = User.objects.filter(email=recipient_email).exists()
+
+        try:
+            # Check if email_to exists in AdminEmailLog
+            email_log = AdminEmailLog.objects.filter(email_to=recipient_email).first()
+
+            if user_exists:
+                if email_log:
+                    if email_log.status == "Sent":
+                        email_log.status = "Accepted"
+                        email_log.save()
+                else:
+                    AdminEmailLog.objects.create(email_to=recipient_email, email_by=admin_name, status="Sent")
+            else:
+                if email_log:
+                    email_log.sent_at = now()  # Update timestamp
+                    email_log.save()
+                else:
+                    AdminEmailLog.objects.create(email_to=recipient_email, email_by=admin_name, status="Sent")
+        except Exception as e:
+            print(e)
+
+
         # Prepare email message
         msg = MIMEMultipart()
         msg['From'] = sender_email
@@ -2552,12 +2846,14 @@ def send_invitation(request):
     client_name = request.data.get('clientName')
     email = request.data.get('email')
     message = request.data.get('message')
+    admin_name = request.data.get('adminName')
+
     # referral_url = f"http://localhost:3000/"
     referral_url = f"https://pinnacleportal.co.uk/"
 
 
     # Validate the input data
-    if not client_name or not email or not message:
+    if not client_name or not email or not message or not admin_name:
         return JsonResponse({'error': 'All fields are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Email subject
@@ -2621,16 +2917,36 @@ def send_invitation(request):
     </html>
     """
 
-    # Prepare email message
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = recipient_email
-    msg['Subject'] = subject
-
-    # Attach the HTML body to the email
-    msg.attach(MIMEText(invitation_message, 'html'))
+     # Check if the email exists in the User model
+    user_exists = User.objects.filter(email=email).exists()
 
     try:
+        # Check if email_to exists in AdminEmailLog
+        email_log = AdminEmailLog.objects.filter(email_to=email).first()
+
+        if user_exists:
+            if email_log:
+                email_log.status = "Accepted"
+                email_log.save()
+            else:
+                AdminEmailLog.objects.create(email_to=email, email_by=admin_name, status="Sent")
+        else:
+            if email_log:
+                email_log.sent_at = now()  # Update timestamp
+                email_log.save()
+            else:
+                AdminEmailLog.objects.create(email_to=email, email_by=admin_name, status="Sent")
+
+
+        # Prepare email message
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+
+        # Attach the HTML body to the email
+        msg.attach(MIMEText(invitation_message, 'html'))
+
         # Sending email
         server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT)
         server.starttls()
@@ -2642,6 +2958,26 @@ def send_invitation(request):
     
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+@api_view(['GET'])
+def get_email_logs(request):
+    # Get all records where status is "Sent"
+    pending_logs = AdminEmailLog.objects.filter(status="Sent")
+
+    # Check if these emails exist in the User model
+    user_emails = set(User.objects.values_list("email", flat=True))
+
+    # Update status to "Accepted" for existing users
+    for log in pending_logs:
+        if log.email_to in user_emails:
+            log.status = "Accepted"
+            log.save()
+
+    # Retrieve and return all updated records
+    all_logs = AdminEmailLog.objects.all().values()
+    
+    return JsonResponse(list(all_logs), safe=False, status=status.HTTP_200_OK)
     
 
 @api_view(['GET'])

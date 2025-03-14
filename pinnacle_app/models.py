@@ -48,6 +48,19 @@ class User(AbstractBaseUser):
 
     objects = UserManager()
 
+class AdminEmailLog(models.Model):
+    email_to = models.EmailField()  # Email of the recipient
+    email_by = models.CharField(max_length=255)  # Admin name who sent the email
+    sent_at = models.DateTimeField(auto_now_add=True)  # Timestamp when the email was sent
+    status = models.CharField(
+        max_length=10,
+        choices= [("Sent", "Invitation Sent"),("Accepted", "Accepted")],
+        default="Sent",
+    )
+
+    def __str__(self):
+        return f"Email to {self.email_to} by {self.email_by} - {self.status}"
+
 class VerificationToken(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     token = models.CharField(max_length=64, unique=True)
@@ -70,6 +83,10 @@ class BasicContactInformation(models.Model):
     full_name = models.CharField(max_length=255)
     business_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=11)
+    home_address = models.CharField(max_length=255, default="ABC Street")
+    resident_type = models.CharField(max_length=255,
+        choices=[('home_owner','Home Owner'),('tenant','Tenant'),('other', 'Other')],default="home_owner")
+    if_other = models.CharField(max_length = 255, default="", null=True)
     date_created = models.DateTimeField(auto_now_add=True)
     last_updated = models.DateTimeField(auto_now=True)
 

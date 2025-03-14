@@ -52,6 +52,7 @@ urlpatterns = [
     path('send-referral-invites/<int:user_id>/', views.send_referral_invites, name='send-referral-invites'),
     path('send-admin-referral-invites/', views.send_Admin_referral_invites, name='send-admin-referral-invites'),
     path('send-invitation/', views.send_invitation, name='send_invitation'),
+    path('get-email-logs/', views.get_email_logs, name='get_email_logs'),
     path('notifications/<int:user_id>/', views.get_notifications, name='get_notifications'),
     path('notifications/mark_seen/', views.mark_notification_seen, name='mark_notification_seen'),
     path('application-statistics/', views.application_statistics, name='application_statistics'),
@@ -60,6 +61,10 @@ urlpatterns = [
     path('notifications/unseen/', views.get_unseen_notifications, name='get_unseen_notifications'),
     path('notifications/update/', views.update_notification_seen, name='update_notification_seen'),
     path('activity_logs/<int:user_id>/', views.get_activity_logs, name='get_activity_logs'),
+
+    path('password-reset/', views.request_password_reset, name='request_password_reset'),
+    path('admin-password-reset/', views.admin_request_password_reset, name='admin_request_password_reset'),
+    path('password-reset/confirm/', views.reset_password, name='reset_password'),
 
 
 
